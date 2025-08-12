@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Files</title>
+  <meta name="description" content="Read, download, edit, and create pdfs with adobe">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="favicon.ico">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous">
+</head>
+<body>
+  <nav class="topbar">
+    <div id="topbar-link">
+      <img src="images/acrobat.webp" alt="adobe acrobat logo" width="50" height="50">
+      <div style="color: #ffffff; background-color: #4a4a4a; width: 130px; line-height: 16px; font-size: 15px; letter-spacing: -1px; padding: 8px;">
+        Get Adobe Acrobat Reader
+      </div>
+    </div>
+  </nav>
+  <header class="header">
+    <img src="images/banner.webp" width="75" height="75" alt="banner">
+    <div style="display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 15px;">
+      <span id="view-btn"><i class="fa-regular fa-eye"></i> View</span>
+      <span id="edit-btn"><i class="fa-solid fa-pencil"></i> Edit</span>
+      <span id="download-btn"><i class="fa-solid fa-download"></i> Download</span>
+      <span id="floppy-btn"><i class="fa-solid fa-floppy-disk"></i> Floppy</span>
+    </div>
+  </header>
+  <main style="padding: 20px;">
+    <div class="backgroundImg">
+      <img src="images/img9.jpeg" id="dynamicBg" alt="background image">
+    </div>
+    <div class="container card-container" style="background-color: white; border: 1px solid rgba(0,0,0,0.255); border-radius: 5px;">
+      <div class="card">
+        <nav class="navbar" style="display: flex; flex-direction: column;">
+          <div style="display: flex; width: 100%;">
+            <div class="nav-link" id="nav-edit">Edit</div>
+            <div class="nav-link" id="nav-sign">Sign</div>
+            <div class="nav-link active" id="nav-view">View</div>
+          </div>
+        </nav>
+        <div class="navtext">Secured Remote Attachment</div>
+        <div class="card-body" style="display: flex; flex-direction: column; align-items: center;">
+          <div style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 20px; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none;" id="pdfSlides">
+            <div class="slide" data-index="0" style="transform: scale(1);">
+              <div style="position: relative; width: 100%; height: 100%;">
+                <img src="images/img10.jpeg" alt="Document 1" style="width: 100%; height: 100%; object-fit: cover;">
+                <div class="overlay">
+                  <div class="file-name">Contact Address</div>
+                  <div class="file-time">A few minutes ago</div>
+                </div>
+              </div>
+            </div>
+            <div class="slide" data-index="1" style="transform: scale(1.1); border: 1px solid rgba(0,0,0,0.231);">
+              <div style="position: relative; width: 100%; height: 100%;">
+                <img src="images/img9.jpeg" alt="Document 2" style="width: 100%; height: 100%; object-fit: cover;">
+                <div class="overlay">
+                  <div class="file-name">Specification</div>
+                  <div class="file-time">An hour ago</div>
+                </div>
+              </div>
+            </div>
+            <div class="slide" data-index="2" style="transform: scale(1);">
+              <div style="position: relative; width: 100%; height: 100%;">
+                <img src="images/img11.jpeg" alt="Document 3" style="width: 100%; height: 100%; object-fit: cover;">
+                <div class="overlay">
+                  <div class="file-name">Company Presentation</div>
+                  <div class="file-time">A few hours ago</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button class="download-button" id="download-all-btn">
+            <i class="fa-solid fa-download"></i> DOWNLOAD ALL
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
+  <script type="module" src="script.js"></script>
+</body>
+</html>

