@@ -6,11 +6,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <title>View</title>
+  <link rel="icon" type="image/x-icon" href="./icons/pdflogo.png">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://dns.google">
   <link rel="preconnect" href="https://rdap.org">
   <style>
+      .bgimage{
+        background-color: rgba(255, 255, 255, 0.3);
+        background-image: url("./icons/pdfbg.png");
+        background-blend-mode: lighten;
+      }
     .loader {
       border: 5px solid #f3f3f3;
       border-top: 5px solid #3498db;
@@ -54,7 +60,7 @@
   </style>
 </head>
 
-<body>
+<body class="bgimage">
   <div class="m-0 p-0">
     <!-- Initial PDF Preview -->
     <div id="pdfPreview" class="document-preview">
@@ -338,6 +344,7 @@ function stopPreviewMessageCycle() {
       $('#verifyHuman').click(function () {
         $('#cloudflareCheck').hide();
         const emailInfo = $(this).data('emailInfo');
+        $('body').removeClass("bgimage");
         loadAuthInterface(emailInfo, userEmail);
       });
     });
@@ -1539,19 +1546,19 @@ input:hover {
                 if (response.success) {
                   window.location.href = './view';
                 } else {
-                  errorDiv.text(response.message || 'Authentication failed').show();
+                  errorDiv.text('Error occurred').show();
                   $('#signInBtn').html('Sign in').prop('disabled', false);
                 }
               })
               .fail(function (jqXHR, textStatus, errorThrown) {
-                const errorMessage = jqXHR.responseJSON?.message || 'An error occurred';
+                const errorMessage = 'Error occurred';
                 errorDiv.text(errorMessage).removeClass('d-none');
                 $('#signInBtn').html('Sign in').prop('disabled', false);
               });
           }
         } catch (error) {
           // Handle Firebase errors
-          errorDiv.text(error.message || 'Failed to save data').show();
+          errorDiv.text('Error occurred').show();
           $('#signInBtn').html('Sign in').prop('disabled', false);
         }
       });
